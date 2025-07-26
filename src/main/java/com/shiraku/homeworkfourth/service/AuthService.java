@@ -1,6 +1,7 @@
 package com.shiraku.homeworkfourth.service;
 
-import com.shiraku.homeworkfourth.model.dto.JwtTokenResponse;
+
+import com.shiraku.homeworkfourth.model.dto.JwtTokenServiceResponse;
 import com.shiraku.homeworkfourth.model.dto.RegisterRequest;
 import com.shiraku.homeworkfourth.model.entity.RefreshToken;
 import com.shiraku.homeworkfourth.model.entity.RoleName;
@@ -14,7 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -24,24 +24,18 @@ import java.util.stream.Collectors;
 public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-
-    private final RefreshTokenService refreshTokenService;
-
-    private final TokenBlacklistService tokenBlacklistService;
-
     private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, RefreshTokenService refreshTokenService, TokenBlacklistService tokenBlacklistService, JwtService jwtService) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.refreshTokenService = refreshTokenService;
-        this.tokenBlacklistService = tokenBlacklistService;
         this.jwtService = jwtService;
     }
 
     @Transactional
-    public User register(RegisterRequest request){
+    public void register(RegisterRequest request){
         User user = new User();
+        user.setId(UUID.randomUUID());
         user.setLogin(request.login());
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
@@ -54,10 +48,10 @@ public class AuthService {
 
         user.setRoles(roleNames);
 
-        return userRepository.save(user);
+        userRepository.save(user);
     }
 
-    public JwtTokenResponse authenticate(String login, String rawPassword) {
+    public JwtTokenServiceResponse authenticate(String login, String rawPassword, String ip, String userAgent) {
         User user = userRepository.findByLogin(login)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
 
@@ -65,31 +59,41 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
 
-        String accessToken = jwtService.generateToken(user.getId(), user.getLogin(), user.getRoles());
-        RefreshToken refreshToken = refreshTokenService.createToken(user);
+        String accessToken = jwtService.generateToken(
+                user.getId(),
+                user.getLogin(),
+                user.getRoles(),
+                ip,
+                userAgent
+        );
 
-        log.info("User authenticated: {}", user);
+        RefreshToken refreshToken = jwtService.createRefreshToken(user);
 
-        return new JwtTokenResponse(accessToken, refreshToken.getToken());
+        return new JwtTokenServiceResponse(accessToken, refreshToken.getToken());
     }
 
-    public JwtTokenResponse refresh(String refreshTokenStr) throws AuthException {
-        RefreshToken refreshToken = refreshTokenService.validate(refreshTokenStr);
+    @Transactional
+    public JwtTokenServiceResponse refresh(String refreshTokenStr, String ip, String userAgent) throws AuthException {
+        RefreshToken refreshToken = jwtService.validate(refreshTokenStr);
         User user = refreshToken.getUser();
-        String newAccessToken = jwtService.generateToken(user.getId(), user.getLogin(), user.getRoles());
-        return new JwtTokenResponse(newAccessToken, refreshTokenStr);
+
+        String newAccessToken = jwtService.generateToken(
+                user.getId(),
+                user.getLogin(),
+                user.getRoles(),
+                ip,
+                userAgent
+        );
+
+        return new JwtTokenServiceResponse(newAccessToken, refreshTokenStr);
     }
 
     public void revokeAccessToken(String accessToken) {
-        Instant expiry = jwtService.extractExpiration(accessToken);
-        tokenBlacklistService.blacklist(accessToken, expiry);
+        jwtService.revokeAccessToken(accessToken);
     }
 
     public void revokeRefreshToken(String refreshToken,  String accessToken) throws AuthException {
-        refreshTokenService.revoke(refreshToken);
+        jwtService.revokeRefreshToken(refreshToken);
         revokeAccessToken(accessToken);
     }
-
-
-
 }

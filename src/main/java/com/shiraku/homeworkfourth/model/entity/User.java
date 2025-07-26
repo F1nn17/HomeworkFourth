@@ -2,8 +2,6 @@ package com.shiraku.homeworkfourth.model.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.UuidGenerator;
-
 import java.util.Set;
 import java.util.UUID;
 
@@ -18,7 +16,6 @@ import java.util.UUID;
 public class User {
 
     @Id
-    @UuidGenerator(style = UuidGenerator.Style.RANDOM)
     @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
     private UUID id;
 

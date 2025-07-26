@@ -1,6 +1,7 @@
 package com.shiraku.homeworkfourth.model.dto;
 
-public record RefreshRequest(
+public record JwtTokenServiceResponse(
+        String accessToken,
         String refreshToken
 ) {
 }
